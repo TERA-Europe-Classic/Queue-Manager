@@ -7,6 +7,5 @@
     "cliName": "queue-manager",
     "guiName": "Queue Manager"
   },
-  "keywords": ["queue", "dungeon", "battleground", "tracking"],
-  "category": "utility"
+  "keywords": ["queue", "dungeon", "battleground", "tracking"]
 }
