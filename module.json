@@ -1,0 +1,12 @@
+{
+  "name": "queue-manager",
+  "author": "Islanzadie",
+  "description": "TERA proxy mod for tracking dungeon and battleground queue events",
+  "version": "1.0.0",
+  "options": {
+    "cliName": "queue-manager",
+    "guiName": "Queue Manager"
+  },
+  "keywords": ["queue", "dungeon", "battleground", "tracking"],
+  "category": "utility"
+}
