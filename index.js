@@ -20,6 +20,7 @@ module.exports = function (mod) {
     if (!isSender) return;
     const t = +e.type;
     queues[t] = {
+      type: t,
       players: e.players,
       instances: e.instances.map((i) => `${i.id}`),
       server: server_name,
