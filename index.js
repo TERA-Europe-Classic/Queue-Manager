@@ -7,8 +7,6 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-let queues = [{}, {}];
-let isSender = false;
 
 const QueueType = {
   DUNGEON: 0,
@@ -38,6 +36,9 @@ function makeApiRequest(queueData, headers) {
 
 module.exports = function (mod) {
   if (!api_key) return;
+
+  let queues = [{}, {}];
+  let isSender = false;
 
   mod.hook("C_CHANGE_PARTY_MANAGER", "raw", () => (isSender = false));
   mod.hook("C_ADD_INTER_PARTY_MATCH_POOL", "raw", () => (isSender = true));
