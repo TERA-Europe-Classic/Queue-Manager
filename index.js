@@ -10,6 +10,32 @@ const api = axios.create({
 let queues = [{}, {}];
 let isSender = false;
 
+const QueueType = {
+  DUNGEON: 0,
+  BATTLEGROUND: 1,
+  ALL: 2
+};
+
+// Use the single endpoint for all queue types
+const queueEndpoint = api_matching_url;
+
+// Helper function to make API requests, handling ALL case with two requests
+function makeApiRequest(queueData, headers) {
+  if (queueData.type === QueueType.ALL) {
+    // For ALL type, make two separate requests in parallel
+    // Server expects type: 0 for dungeons, type: 1 for battlegrounds
+    const requests = [
+      api.post(queueEndpoint, { ...queueData, type: QueueType.DUNGEON }, { headers }).catch(() => {}),
+      api.post(queueEndpoint, { ...queueData, type: QueueType.BATTLEGROUND }, { headers }).catch(() => {})
+    ];
+    return Promise.all(requests);
+  } else {
+    // For specific types, make single request
+    return api.post(queueEndpoint, queueData, { headers });
+  }
+}
+
+
 module.exports = function (mod) {
   if (!api_key) return;
 
@@ -19,19 +45,18 @@ module.exports = function (mod) {
   mod.hook("S_ADD_INTER_PARTY_MATCH_POOL", 1, (e) => {
     if (!isSender) return;
     const t = +e.type;
+    if (queues[t] && queues[t].matching_state === 1) return; // Already in queue
+    console.log(`Sending queue data from ${server_name} for ${e.instances.map((i) => `${i.id}`)}`);
     queues[t] = {
       type: t,
-      players: e.players,
+      players: e.players.length, // Convert array to count
       instances: e.instances.map((i) => `${i.id}`),
       server: server_name,
       matching_state: 1,
     };
 
     setImmediate(() =>
-      api
-        .post(api_matching_url, queues[t], {
-          headers: { Authorization: `Bearer ${api_key}` },
-        })
+      makeApiRequest(queues[t], { Authorization: `Bearer ${api_key}` })
         .catch(() => {})
     );
   });
@@ -39,13 +64,14 @@ module.exports = function (mod) {
   mod.hook("S_DEL_INTER_PARTY_MATCH_POOL", "*", (e) => {
     if (!isSender) return;
     const t = +e.type;
-    if (queues[t]) {
-      queues[t].matching_state = 0;
+    if (queues[t] && queues[t].matching_state === 1) {
+      // Create a copy with matching_state set to 0, preserving all other fields
+      const deleteData = {
+        ...queues[t],
+        matching_state: 0
+      };
       setImmediate(() =>
-        api
-          .post(api_matching_url, queues[t], {
-            headers: { Authorization: `Bearer ${api_key}` },
-          })
+        makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
           .then(() => {
             queues[t] = {};
           })
@@ -55,69 +81,35 @@ module.exports = function (mod) {
     isSender = false;
   });
 
-  // Handle queue pop/match found for dungeons
-  mod.hook("S_SHOW_PARTY_MATCH_INFO", "raw", () => {
-    if (queues[0].matching_state === 1) {
-      queues[0].matching_state = 0;
+  // Handle queue pop/match found
+  mod.hook("S_FIN_INTER_PARTY_MATCH", "raw", () => {
+    if (!isSender) return;
+    if (queues[0] && queues[0].matching_state === 1) {
+      const deleteData = { ...queues[0], matching_state: 0 };
       setImmediate(() =>
-        api
-          .post(api_matching_url, queues[0], {
-            headers: { Authorization: `Bearer ${api_key}` },
-          })
+        makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
           .then(() => (queues[0] = {}))
           .catch(() => (queues[0] = {}))
       );
     }
     // Also clear BG queue if active (match found clears all)
-    if (queues[1].matching_state === 1) {
-      queues[1].matching_state = 0;
+    if (queues[1] && queues[1].matching_state === 1) {
+      const deleteData = { ...queues[1], matching_state: 0 };
       setImmediate(() =>
-        api
-          .post(api_matching_url, queues[1], {
-            headers: { Authorization: `Bearer ${api_key}` },
-          })
+        makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
           .then(() => (queues[1] = {}))
           .catch(() => (queues[1] = {}))
       );
     }
-  });
-
-  // Handle queue pop/match found for battlegrounds
-  mod.hook("S_BATTLE_FIELD_ENTRANCE_INFO", "raw", () => {
-    if (queues[1].matching_state === 1) {
-      queues[1].matching_state = 0;
-      setImmediate(() =>
-        api
-          .post(api_matching_url, queues[1], {
-            headers: { Authorization: `Bearer ${api_key}` },
-          })
-          .then(() => (queues[1] = {}))
-          .catch(() => (queues[1] = {}))
-      );
-    }
-    // Also clear dungeon queue if active (match found clears all)
-    if (queues[0].matching_state === 1) {
-      queues[0].matching_state = 0;
-      setImmediate(() =>
-        api
-          .post(api_matching_url, queues[0], {
-            headers: { Authorization: `Bearer ${api_key}` },
-          })
-          .then(() => (queues[0] = {}))
-          .catch(() => (queues[0] = {}))
-      );
-    }
+    isSender = false;
   });
 
   this.destructor = () => {
     queues.forEach((q) => {
-      if (q.matching_state === 1) {
-        q.matching_state = 0;
+      if (q && q.matching_state === 1) {
+        const deleteData = { ...q, matching_state: 0 };
         setImmediate(() =>
-          api
-            .post(api_matching_url, q, {
-              headers: { Authorization: `Bearer ${api_key}` },
-            })
+          makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
             .catch(() => {})
         );
       }
