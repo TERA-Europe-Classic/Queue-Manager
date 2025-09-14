@@ -65,19 +65,24 @@ module.exports = function (mod) {
   mod.hook("S_DEL_INTER_PARTY_MATCH_POOL", "*", (e) => {
     if (!isSender) return;
     const t = +e.type;
-    if (queues[t] && queues[t].matching_state === 1) {
-      // Create a copy with matching_state set to 0, preserving all other fields
-      const deleteData = {
-        ...queues[t],
-        matching_state: 0
-      };
-      setImmediate(() =>
-        makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
-          .then(() => {
-            queues[t] = {};
-          })
-          .catch(() => (queues[t] = {}))
-      );
+    const clearQueue = (idx) => {
+      if (queues[idx] && queues[idx].matching_state === 1) {
+        const deleteData = { ...queues[idx], matching_state: 0 };
+        setImmediate(() =>
+          makeApiRequest(deleteData, { Authorization: `Bearer ${api_key}` })
+            .then(() => {
+              queues[idx] = {};
+            })
+            .catch(() => (queues[idx] = {}))
+        );
+      }
+    };
+
+    if (t === QueueType.ALL) {
+      clearQueue(0);
+      clearQueue(1);
+    } else {
+      clearQueue(t);
     }
     isSender = false;
   });
