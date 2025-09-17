@@ -38,13 +38,17 @@ module.exports = function (mod) {
   if (!api_key) return;
 
   let queues = [{}, {}];
-  let isSender = false;
+  let isSenderByType = [false, false];
+  let isSenderGlobal = false;
 
-  mod.hook("C_CHANGE_PARTY_MANAGER", "raw", () => (isSender = false));
-  mod.hook("C_ADD_INTER_PARTY_MATCH_POOL", "raw", () => (isSender = true));
+  mod.hook("C_CHANGE_PARTY_MANAGER", "raw", () => {
+    isSenderByType = [false, false];
+    isSenderGlobal = false;
+  });
+  mod.hook("C_ADD_INTER_PARTY_MATCH_POOL", "raw", () => (isSenderGlobal = true));
 
   mod.hook("S_ADD_INTER_PARTY_MATCH_POOL", 1, (e) => {
-    if (!isSender) return;
+    if (!isSenderGlobal) return;
     const t = +e.type;
     if (queues[t] && queues[t].matching_state === 1) return; // Already in queue
     console.log(`Sending queue data from ${server_name} for ${e.instances.map((i) => `${i.id}`)}`);
@@ -55,6 +59,7 @@ module.exports = function (mod) {
       server: server_name,
       matching_state: 1,
     };
+    isSenderByType[t] = true;
 
     setImmediate(() =>
       makeApiRequest(queues[t], { Authorization: `Bearer ${api_key}` })
@@ -63,7 +68,6 @@ module.exports = function (mod) {
   });
 
   mod.hook("S_DEL_INTER_PARTY_MATCH_POOL", "*", (e) => {
-    if (!isSender) return;
     const t = +e.type;
     const clearQueue = (idx) => {
       if (queues[idx] && queues[idx].matching_state === 1) {
@@ -78,18 +82,29 @@ module.exports = function (mod) {
       }
     };
 
+    const shouldProcess = t === QueueType.ALL
+      ? (isSenderByType[0] || isSenderByType[1] || isSenderGlobal)
+      : (isSenderByType[t] || isSenderGlobal);
+    if (!shouldProcess) return;
+
     if (t === QueueType.ALL) {
       clearQueue(0);
       clearQueue(1);
+      isSenderByType[0] = false;
+      isSenderByType[1] = false;
     } else {
       clearQueue(t);
+      isSenderByType[t] = false;
     }
-    isSender = false;
+
+    if (!isSenderByType[0] && !isSenderByType[1]) {
+      isSenderGlobal = false;
+    }
   });
 
   // Handle queue pop/match found
   mod.hook("S_FIN_INTER_PARTY_MATCH", "raw", () => {
-    if (!isSender) return;
+    if (!(isSenderByType[0] || isSenderByType[1] || isSenderGlobal)) return;
     if (queues[0] && queues[0].matching_state === 1) {
       const deleteData = { ...queues[0], matching_state: 0 };
       setImmediate(() =>
@@ -107,7 +122,8 @@ module.exports = function (mod) {
           .catch(() => (queues[1] = {}))
       );
     }
-    isSender = false;
+    isSenderByType = [false, false];
+    isSenderGlobal = false;
   });
 
   this.destructor = () => {
