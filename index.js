@@ -14,6 +14,12 @@ const QueueType = {
   ALL: 2
 };
 
+const RolesEnum = {
+    TANK: 0,
+    DD: 1,
+    HEAL: 2
+}
+
 // Use the single endpoint for all queue types
 const queueEndpoint = api_matching_url;
 
@@ -33,6 +39,16 @@ function makeApiRequest(queueData, headers) {
   }
 }
 
+function countRolesPartyMatching(e) {
+    const roleCounts = {TANK: 0, DD: 0, HEAL: 0};
+    e.players.forEach((p) => {
+        if (p.role === RolesEnum.TANK) roleCounts.TANK++;
+        else if (p.role === RolesEnum.DD) roleCounts.DD++;
+        else if (p.role === RolesEnum.HEAL) roleCounts.HEAL++;
+    });
+    console.log(`Role counts: ${JSON.stringify(roleCounts)}`);
+    return roleCounts;
+}
 
 module.exports = function (mod) {
   if (!api_key) return;
@@ -58,6 +74,7 @@ module.exports = function (mod) {
       instances: e.instances.map((i) => `${i.id}`),
       server: server_name,
       matching_state: 1,
+      role: countRolesPartyMatching(e),
     };
     isSenderByType[t] = true;
 
