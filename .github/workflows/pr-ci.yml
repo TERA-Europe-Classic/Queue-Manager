@@ -1,0 +1,79 @@
+name: PR CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint script when present
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "No lint script defined; skipping."
+          fi
+
+      - name: Run test script when present
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "No test script defined; skipping."
+          fi
+
+      - name: Runtime sanity check
+        run: |
+          cp config.json.example config.json
+          node --check index.js
+          node <<'NODE'
+          const modFactory = require('./index.js');
+          if (typeof modFactory !== 'function') {
+            throw new Error('index.js does not export a function');
+          }
+
+          const registeredHooks = [];
+          const mockMod = {
+            hook(name, version, handler) {
+              if (typeof version === 'function') {
+                handler = version;
+                version = 'implicit';
+              }
+              if (typeof handler !== 'function') {
+                throw new Error(`Hook ${name} is missing a handler`);
+              }
+              registeredHooks.push({ name, version });
+            }
+          };
+
+          const context = {};
+          modFactory.call(context, mockMod);
+
+          if (registeredHooks.length === 0) {
+            throw new Error('Module did not register any hooks');
+          }
+
+          if (typeof context.destructor !== 'function') {
+            throw new Error('Module did not expose a destructor');
+          }
+
+          console.log(`Registered ${registeredHooks.length} hooks:`);
+          for (const hook of registeredHooks) {
+            console.log(`- ${hook.name} (${hook.version})`);
+          }
+          NODE
